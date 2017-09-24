@@ -1,0 +1,113 @@
+body {
+  margin: 0;
+}
+
+#field {
+  position: absolute;
+  height: 90%;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, 0);
+  background-color: #000000;
+}
+
+.polygons {
+  stroke-width: 0.1;
+  stroke: rgb(200, 200, 200);
+  stroke-alignment: 'inner';
+}
+
+.friend {
+  fill: rgba(0, 255, 180, 0.5);
+}
+
+.enemy {
+  fill: rgba(255, 0, 120, 0.5);
+}
+
+.neutral {
+  fill: rgba(150, 150, 150, 0.5);
+}
+
+.units {
+  stroke-width: 0.5;
+}
+
+.units .friend {
+    stroke: rgb(100, 240, 150);
+}
+
+.units .enemy {
+    stroke: rgb(240, 150, 100);
+}
+
+.units .neutral {
+    stroke: rgb(150, 150, 150);
+}
+
+.sel-circle {
+  stroke-width: 0.6;
+  stroke: #00ff00;
+  fill: none;
+}
+
+.sel-rect {
+  stroke-width: 1;
+  stroke: #ffffff;
+  stroke-dasharray: 1,1;
+  fill: none;
+}
+
+.move-arrow {
+  stroke-width: 0.6;
+  stroke: #00ff00;
+  stroke-dasharray: 1,1;
+  fill: rgba(0, 255, 0, 0.5);
+}
+
+.hidden {
+  visibility: hidden;
+}
+
+.delaunay {
+  stroke: black;
+  stroke-width: 0.2;
+}
+
+.edges {
+  stroke: #ff9900;
+  stroke-width: 1.0;
+  stroke-linecap: round;
+}
+
+#scorebar {
+  position:  absolute;
+  width: 100%;
+  height: 10%;
+  bottom: 0%;
+
+  background-color: #333355;
+}
+
+#scorebar span {
+  display: block;
+  position: absolute;
+
+  width: 50%;
+  height: 100%;
+  padding: 20px;
+  font-size: 30pt;
+  font-weight: bold;
+  box-sizing: border-box;
+}
+
+#score1 {
+  color: rgb(0, 255, 180);
+}
+
+#score2 {
+  color: rgb(255, 0, 120);
+
+  right: 0;
+  text-align: right;
+}
