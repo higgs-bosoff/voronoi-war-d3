@@ -1,6 +1,7 @@
 // Parameters
 rScale = 1;
 rMin = 0.5;
+scoreRate = 1e-6;
 damageRate = 0.15;
 arrowSpread = 200;
 arrowBase = 10;
@@ -110,18 +111,20 @@ WarNode.prototype = {
     },
 
     radius: function() {
-        return this.health / this.max_health * rScale + rMin;
+        return this.health* rScale + rMin;
     }
 
 }
 
-var WarMap = function(selector) {
+var WarMap = function(selector, targ_score, config) {
     this.svg = d3.select(selector);
 
     var vbox = this.svg.attr('viewBox').split(',');
 
     this.width = parseFloat(vbox[2]);
     this.height = parseFloat(vbox[3]);
+
+    this.tscore = targ_score;
 
     // Conversion matrices  
     this.SVG2SCR = this.svg._groups[0][0].getScreenCTM();
@@ -209,6 +212,8 @@ var WarMap = function(selector) {
     this.movearrow = this.svg.append('path')
                          .classed('move-arrow', true)
                          .classed('hidden', true);
+    this.spawns = this.svg.append("g").attr("class", "spawn-area");    
+
 
     this.selection = [];
 
@@ -221,9 +226,64 @@ var WarMap = function(selector) {
       1: 0.0,
       2: 0.0,
     };
+
+    this.generate(config);
+
 };
 
 WarMap.prototype = {
+
+    generate: function(config) {
+        // Generate a map with n nodes for each faction
+
+        // First, generate obstacles
+        for (var i = 0; i < config.terrain.length; ++i) {
+            var tn = config.terrain[i];
+            this.addNode(new WarNode(0, 0, tn[2], 0, tn[0], tn[1]));
+        }
+
+        // Now spawn points
+        this.spawns.selectAll("circle")
+                   .data(config.spawns).enter()
+                   .append("circle")
+                   .attr('cx', function(d) { return d[0]; })
+                   .attr('cy', function(d) { return d[1]; })
+                   .attr('r', 15);
+
+        // Find on which side of the border are the teams
+        var b = config.border;
+        function bside(x) {
+            return Math.sign((x[0]-b[0][0])*(b[1][1]-b[0][1]) - (x[1]-b[0][1])*(b[1][0]-b[0][0]));
+        }
+        var teamsides = config.spawns.map(bside);
+        if (teamsides[0] == teamsides[1]) {
+            // WTF?
+            throw 'Invalid config';
+        }
+
+        // Now spawn points!
+        var n1 = 0;
+        var n2 = 0;
+
+        while(n1 < config.n1 && n2 < config.n2) {
+            // Extract a random point
+            var p = [Math.random()*this.width,
+                     Math.random()*this.height];
+            var s = bside(p);
+
+            if (s == teamsides[0] && n1 < config.n1) {
+                this.addNode(new WarNode(1, 1, 1, 1, p[0], p[1]));
+                ++n1;
+                continue;
+            }
+            if (s == teamsides[1] && n2 < config.n2) {
+                this.addNode(new WarNode(2, 1, 1, 1, p[0], p[1]));
+                ++n2;
+                continue;
+            }
+        }
+
+    },
 
     getMouseCoords: function() {
         // Mouse coordinates in point format from last event
@@ -428,11 +488,21 @@ WarMap.prototype = {
           v0y = v1y;
         }
 
-        this.scores[c.data[2]] += area*this.dt/1000.0;
+        this.scores[c.data[2]] += area*this.dt*scoreRate;
       }
 
-      d3.select('#score1').html(this.scores[1]);
-      d3.select('#score2').html(this.scores[2]);
+      d3.select('#score1').html(Math.ceil(this.scores[1]/this.tscore*100.0) + '%');
+      d3.select('#score2').html(Math.ceil(this.scores[2]/this.tscore*100.0) + '%');
+
+      if (this.scores[1] >= this.tscore) {
+        return 1;        
+      }
+      else if (this.scores[2] >= this.tscore) {
+        return 2;
+      }
+
+      return 0;
+
     },
 
     update: function() {
@@ -447,8 +517,13 @@ WarMap.prototype = {
         this.solveCollisions();
         // Damage calculation
         this.resolveBattles();
-        // Calculate scores
-        this.calcScore();
+        // Calculate scores & check for victory
+        var win = this.calcScore();
+
+        if (win > 0) {
+            this.stop();
+            alert('Team ' + win + ' wins!');
+        }
     },
 
     select: function(i) {
@@ -558,7 +633,28 @@ WarMap.prototype = {
     }
 };
 
-var map = new WarMap("#field");
+// Test level
+testmap = {
+    terrain: [
+        [10, 50, 1],
+        [30, 50, 2],
+        [50, 50, 3],
+        [70, 50, 2],
+        [90, 50, 1],
+    ],
+    spawns: [
+        [50, 10],
+        [50, 90]
+    ], 
+    border: [
+        [0, 40],
+        [100, 60]
+    ],
+    n1: 10,
+    n2: 10,
+};
+
+var map = new WarMap("#field", 100, testmap);
 
 // Generate points
 points = [];
@@ -567,21 +663,23 @@ function randint(n) {
     return Math.floor(Math.random() * n);
 }
 
+/*
 for (var i = 0; i < 40; ++i) {
     points.push([randint(100), randint(100)]);
 }
-/*
 for (var i = 0; i < 30; ++i) {
   points.push([randint(100), randint(50)]);
-}*/
-
+}
 for (var i = 0; i < points.length; ++i) {
     map.addNode(
         new WarNode(i > 0 ? randint(3) : 1, 0.02, 1, 30, points[i][0], points[i][1])
     );
-}
+}*/
 
-map.select(0);
+
+
+
+//map.select(0);
 
 d3.select('body').on('keypress', function() {
     if (d3.event.key == 'q') {
