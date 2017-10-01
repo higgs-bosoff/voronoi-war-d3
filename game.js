@@ -251,34 +251,41 @@ WarMap.prototype = {
                    .attr('r', 15);
 
         // Find on which side of the border are the teams
-        var b = config.border;
-        function bside(x) {
+        var b1 = config.border[0];
+        var b2 = config.border[1];
+        function bside(x, b) {
             return Math.sign((x[0]-b[0][0])*(b[1][1]-b[0][1]) - (x[1]-b[0][1])*(b[1][0]-b[0][0]));
         }
-        var teamsides = config.spawns.map(bside);
+        var teamsides = [bside(config.spawns[0], b1), bside(config.spawns[1], b2)];
+        /*
         if (teamsides[0] == teamsides[1]) {
             // WTF?
             throw 'Invalid config';
-        }
+        }*/
 
         // Now spawn points!
         var n1 = 0;
         var n2 = 0;
 
-        while(n1 < config.n1 && n2 < config.n2) {
+        while((n1 < config.n1) || (n2 < config.n2)) {
             // Extract a random point
             var p = [Math.random()*this.width,
                      Math.random()*this.height];
-            var s = bside(p);
+            var s1 = bside(p, b1);
+            var s2 = bside(p, b2);
 
-            if (s == teamsides[0] && n1 < config.n1) {
-                this.addNode(new WarNode(1, 1, 1, 1, p[0], p[1]));
-                ++n1;
+            if (s1 == teamsides[0] && n1 < config.n1) {                
+                this.addNode(new WarNode(1, config.stats[0][0],
+                                            config.stats[0][1],
+                                            config.stats[0][2], p[0], p[1]));
+                n1 += 1;
                 continue;
             }
-            if (s == teamsides[1] && n2 < config.n2) {
-                this.addNode(new WarNode(2, 1, 1, 1, p[0], p[1]));
-                ++n2;
+            if (s2 == teamsides[1] && n2 < config.n2) {
+                this.addNode(new WarNode(2, config.stats[0][0],
+                                            config.stats[0][1],
+                                            config.stats[0][2], p[0], p[1]));
+                n2 += 1;
                 continue;
             }
         }
@@ -567,19 +574,6 @@ WarMap.prototype = {
         this.redrawSel();
     },
 
-    rightClick: function(self) {
-        d3.event.preventDefault();
-        var pt = self.svg._groups[0][0].createSVGPoint();
-        pt.x = d3.event.clientX;
-        pt.y = d3.event.clientY;
-        pt = pt.matrixTransform(self.SCR2SVG);
-        for (var i = 0; i < self.selection.length; ++i) {
-            var j = self.selection[i];
-            self.nodes[j].moveTo(pt.x, pt.y);
-        }
-        self.redraw();
-    },
-
     orderGroup: function(p0, p1) {
         var dx = p1.x-p0.x;
         var dy = p1.y-p0.y;
@@ -647,12 +641,23 @@ testmap = {
         [50, 90]
     ], 
     border: [
-        [0, 40],
-        [100, 60]
+        [[0, 40],
+         [100, 40]],
+        [[0, 60],
+         [100, 60]],         
+    ],
+    stats: [    // Attack, health, speed
+        [2, 1, 5],
+        [1, 2, 3]
     ],
     n1: 10,
-    n2: 10,
+    n2: 20,
 };
+
+var PlayerController = function(map) {
+    // Handles the controls on the player's side
+    
+}
 
 var map = new WarMap("#field", 100, testmap);
 
