@@ -2,9 +2,36 @@
 rScale = 1;
 rMin = 0.5;
 scoreRate = 1e-6;
-damageRate = 0.15;
+damageRate = 0.02;
 arrowSpread = 200;
 arrowBase = 10;
+
+// Event handler
+var EventHandler = function() {
+    this.handlers = [];
+    this.contexts = [];
+}
+
+EventHandler.prototype = {
+    add: function(f, context) {
+        this.handlers.push(f);
+        this.contexts.push(context);
+    },
+
+    remove: function(f) {
+        var i = this.handlers.indexOf(f);
+        if (i >= 0) {
+            this.handlers.splice(i, 1);
+            this.contexts.splice(i, 1);
+        }
+    },
+
+    call: function() {
+        for (var i = 0; i < this.handlers.length; ++i) {
+            this.handlers[i].apply(this.contexts[i], arguments);
+        }
+    }
+}
 
 //
 
@@ -36,12 +63,8 @@ function redrawUnit(unit) {
             return f === 0 ? "neutral" : f == 1 ? "friend" : "enemy";
         })
         .each(function(d) {
-            d3.select(this).on("click", function(a, b, c, e) {
-                if (d3.event.shiftKey) {
-                    map.shiftSelect(d.i);
-                } else {
-                    map.select(d.i);
-                }
+            d3.select(this).on("click", function() {
+                map.onNodeClick.call(d.i, d3.event.shiftKey);
             });
         });
 }
@@ -126,70 +149,6 @@ var WarMap = function(selector, targ_score, config) {
 
     this.tscore = targ_score;
 
-    // Conversion matrices  
-    this.SVG2SCR = this.svg._groups[0][0].getScreenCTM();
-    this.SCR2SVG = this.SVG2SCR.inverse();
-
-    // Click capture system
-    var self = this;
-    this._lastbutton = -1;
-    // 1. No context menu
-    this.svg.on("contextmenu", function() {
-        d3.event.preventDefault();
-    });
-    // 2. On mouse down, keep track of starting point and which button was pressed
-    this.svg.on("mousedown", function() {
-        self._pt0 = self.getMouseCoords();
-        self._lastbutton = d3.event.button;
-
-        switch (self._lastbutton) {
-            case 0:
-                self.selrect.classed('hidden', false)
-                            .attr('x', self._pt0.x)
-                            .attr('y', self._pt0.y)
-                            .attr('width', 0)
-                            .attr('height', 0);
-                break;
-            case 2:
-                self.movearrow.classed('hidden', false);
-                self.drawArrow(self._pt0, self._pt0);
-                break;
-        }        
-    });
-    // 3. On mouse move, change the graphic
-    this.svg.on("mousemove", function() {
-        var p = self.getMouseCoords();
-        switch (self._lastbutton) {
-            case 0:
-                self.selrect.attr('x', Math.min(self._pt0.x, p.x))
-                            .attr('y', Math.min(self._pt0.y, p.y))
-                            .attr('width', Math.abs(p.x-self._pt0.x))
-                            .attr('height', Math.abs(p.y-self._pt0.y));
-                break;
-            case 2:
-                self.drawArrow(self._pt0, p);
-                break;
-        }
-    });
-
-    this.svg.on("mouseup mouseleave", function() {
-        var p1 = self.getMouseCoords();
-
-        switch(self._lastbutton) {
-            case 0: 
-                self.selrect.classed('hidden', true);
-                self.areaSelect(self._pt0.x, self._pt0.y, p1.x, p1.y, d3.event.shiftKey);
-                break;
-            case 2:
-                self.movearrow.classed('hidden', true);
-                self.orderGroup(self._pt0, p1);
-                break;
-        }
-
-        self._lastbutton = -1;
-
-    });
-
 
     this.voronoi = d3.voronoi().extent([
         [0, 0],
@@ -201,21 +160,8 @@ var WarMap = function(selector, targ_score, config) {
     this.polygons = this.svg.append("g").attr("class", "polygons");
     this.units = this.svg.append("g").attr("class", "units");
     this.edges = this.svg.append("g").attr("class", "edges");
-    this.selcircles = this.svg.append("g").attr("class", "sel-circle");
-    this.selrect = this.svg.append('rect')
-                        .classed('sel-rect', true)
-                        .classed('hidden', true)
-                        .attr('x', 0)
-                        .attr('y', 0)
-                        .attr('width', 20)
-                        .attr('height', 20);
-    this.movearrow = this.svg.append('path')
-                         .classed('move-arrow', true)
-                         .classed('hidden', true);
+    
     this.spawns = this.svg.append("g").attr("class", "spawn-area");    
-
-
-    this.selection = [];
 
     // Running interval
     this.dt = 30;
@@ -226,6 +172,14 @@ var WarMap = function(selector, targ_score, config) {
       1: 0.0,
       2: 0.0,
     };
+
+    // Controllers
+    this.controllers = [null, null];
+
+    // Events
+    this.onRedraw = new EventHandler();
+    this.onNodeDestroy = new EventHandler();
+    this.onNodeClick = new EventHandler();
 
     this.generate(config);
 
@@ -292,48 +246,21 @@ WarMap.prototype = {
 
     },
 
-    getMouseCoords: function() {
-        // Mouse coordinates in point format from last event
-        var pt = this.svg._groups[0][0].createSVGPoint();
-        pt.x = d3.event.clientX;
-        pt.y = d3.event.clientY;
-        return pt.matrixTransform(this.SCR2SVG);
-    },
-
-    drawArrow: function(p0, p1) {
-        var dx = p1.x-p0.x;
-        var dy = p1.y-p0.y;
-        var l = Math.sqrt(dx*dx+dy*dy);
-        var ang = Math.atan2(dy, dx)*180/Math.PI;
-        // Point from pt0 to p1
-        this.movearrow.attr('d', 
-                            'M '+p0.x+','+(p0.y-arrowSpread/(arrowBase+l))+' '+
-                            'L '+(p0.x+l)+','+p0.y+' '+
-                            'L '+p0.x+','+(p0.y+arrowSpread/(arrowBase+l)))
-                      .attr('transform', 
-                            'rotate('+ang+','+p0.x+','+p0.y+')');
-    },
-
     addNode: function(n) {
         n.i = this.nodes.length;
         this.nodes.push(n);
     },
 
+    addController: function(controller, team) {
+        this.controllers[team-1] = new controller(this, team);
+    },
+
     removeNode: function(i) {
         // Keep selection
-        var sel = this.selection;
         this.nodes.splice(i, 1);
         this.indexNodes();
-        // Now, do we need to update anything?
-        if (this.selection.includes(i)) {
-            this.selection.splice(this.selection.indexOf(i), 1);
-        }
 
-        for (var j = 0; j < this.selection.length; ++j) {
-            if (this.selection[j] > i) {
-                this.selection[j] -= 1;
-            }
-        }
+        this.onNodeDestroy.call(i);
     },
 
     indexNodes: function() {
@@ -376,30 +303,7 @@ WarMap.prototype = {
         edges.call(redrawEdge);
         edges.exit().remove();
 
-        this.redrawSel();
-    },
-
-    redrawSel: function() {
-        var circles = this.selcircles.selectAll("circle").data(this.selection);
-        nodes = this.nodes;
-        circles
-            .enter()
-            .append("circle")
-            .attr("r", 3)
-            .attr("cx", function(d) {
-                return nodes[d].x;
-            })
-            .attr("cy", function(d) {
-                return nodes[d].y;
-            });
-        circles
-            .attr("cx", function(d) {
-                return nodes[d].x;
-            })
-            .attr("cy", function(d) {
-                return nodes[d].y;
-            });
-        circles.exit().remove();
+        this.onRedraw.call();
     },
 
     moveAll: function() {
@@ -533,60 +437,19 @@ WarMap.prototype = {
         }
     },
 
-    select: function(i) {
-        if (i < 0 || i >= this.nodes.length || this.nodes[i].faction != 1)
-            this.selection = [];
-        else this.selection = [i];
-
-        this.redrawSel();
-    },
-
-    shiftSelect: function(i) {
-        if (i < 0 || i >= this.nodes.length || this.nodes[i].faction != 1) return;
-        if (this.selection.includes(i)) {
-            var j = this.selection.indexOf(i);
-            this.selection.splice(j, 1);
-        } else {
-            this.selection.push(i);
-        }
-
-        this.redrawSel();
-    },
-
-    areaSelect: function(x1, y1, x2, y2, add) {
-        if (!add)
-            this.selection = [];
-        var xmin = Math.min(x1, x2);
-        var xmax = Math.max(x1, x2);
-        var ymin = Math.min(y1, y2);
-        var ymax = Math.max(y1, y2);
-
-        for (var i = 0; i < this.nodes.length; ++i) {
-            var n = this.nodes[i];            
-            if (n.x >= xmin && n.x < xmax &&
-                n.y >= ymin && n.y < ymax &&
-                n.faction == 1 && 
-                (!add || this.selection.indexOf(i) < 0)) {
-                this.selection.push(i);
-            }
-        }
-
-        this.redrawSel();
-    },
-
-    orderGroup: function(p0, p1) {
+    orderGroup: function(p0, p1, group) {
         var dx = p1.x-p0.x;
         var dy = p1.y-p0.y;
         var l = Math.sqrt(dx*dx+dy*dy);
         var ang = Math.atan2(dy, dx)*180/Math.PI;
 
-        var tlen = this.selection.length-1.0;
+        var tlen = group.length-1.0;
         var w = arrowSpread/(arrowBase+l);
         var pl = [p0.x-dy/l*w, p0.y+dx/l*w];
         var pr = [p0.x+dy/l*w, p0.y-dx/l*w];
         var pu = [p1.x, p1.y];
 
-        for (var i = 0; i < this.selection.length; ++i) {
+        for (var i = 0; i < group.length; ++i) {
             var tx, ty;
             if (l > 0 && tlen > 0) {
                 var t = i/tlen;
@@ -606,7 +469,7 @@ WarMap.prototype = {
                 ty = p1.y;
             }
 
-            this.nodes[this.selection[i]].moveTo(tx, ty);
+            this.nodes[group[i]].moveTo(tx, ty);
         }
     },
 
@@ -626,6 +489,214 @@ WarMap.prototype = {
         clearInterval(this.interval);
     }
 };
+
+var PlayerController = function(map, team) {
+    // Handles the controls on the player's side
+
+    this.map = map;
+    this.svg = map.svg;
+    this.team = team;
+
+    var self = this;
+
+    // Compute conversion matrices 
+    this.computeMatrices();
+    window.addEventListener('resize', function() {
+        self.computeMatrices();
+    });
+
+    this.selection = [];
+    this.selcircles = this.svg.append("g").attr("class", "sel-circle");
+    this.selrect = this.svg.append('rect')
+                        .classed('sel-rect', true)
+                        .classed('hidden', true)
+                        .attr('x', 0)
+                        .attr('y', 0)
+                        .attr('width', 20)
+                        .attr('height', 20);
+    this.movearrow = this.svg.append('path')
+                         .classed('move-arrow', true)
+                         .classed('hidden', true);
+
+    // Click capture system
+    this._lastbutton = -1;
+    // 1. No context menu
+    this.svg.on("contextmenu", function() {
+        d3.event.preventDefault();
+    });
+    // 2. On mouse down, keep track of starting point and which button was pressed
+    this.svg.on("mousedown", function() {
+        self._pt0 = self.getMouseCoords();
+        self._lastbutton = d3.event.button;
+
+        switch (self._lastbutton) {
+            case 0:
+                self.selrect.classed('hidden', false)
+                            .attr('x', self._pt0.x)
+                            .attr('y', self._pt0.y)
+                            .attr('width', 0)
+                            .attr('height', 0);
+                break;
+            case 2:
+                self.movearrow.classed('hidden', false);
+                self.drawArrow(self._pt0, self._pt0);
+                break;
+        }        
+    });
+    // 3. On mouse move, change the graphic
+    this.svg.on("mousemove", function() {
+        var p = self.getMouseCoords();
+        switch (self._lastbutton) {
+            case 0:
+                self.selrect.attr('x', Math.min(self._pt0.x, p.x))
+                            .attr('y', Math.min(self._pt0.y, p.y))
+                            .attr('width', Math.abs(p.x-self._pt0.x))
+                            .attr('height', Math.abs(p.y-self._pt0.y));
+                break;
+            case 2:
+                self.drawArrow(self._pt0, p);
+                break;
+        }
+    });
+
+    this.svg.on("mouseup mouseleave", function() {
+        var p1 = self.getMouseCoords();
+
+        switch(self._lastbutton) {
+            case 0: 
+                self.selrect.classed('hidden', true);
+                self.areaSelect(self._pt0.x, self._pt0.y, p1.x, p1.y, d3.event.shiftKey);
+                break;
+            case 2:
+                self.movearrow.classed('hidden', true);
+                self.map.orderGroup(self._pt0, p1, self.selection);
+                break;
+        }
+
+        self._lastbutton = -1;
+
+    });
+
+    this.map.onRedraw.add(self.redrawSel, self);
+    this.map.onNodeDestroy.add(self.removeFromSel, self);
+    this.map.onNodeClick.add(self.select, self);
+}
+
+PlayerController.prototype = {
+
+    computeMatrices: function() {
+        this.SVG2SCR = this.svg._groups[0][0].getScreenCTM();
+        this.SCR2SVG = this.SVG2SCR.inverse();
+    },
+
+    getMouseCoords: function() {
+        // Mouse coordinates in point format from last event
+        var pt = this.svg._groups[0][0].createSVGPoint();
+        pt.x = d3.event.clientX;
+        pt.y = d3.event.clientY;
+        return pt.matrixTransform(this.SCR2SVG);
+    },
+
+    drawArrow: function(p0, p1) {
+        var dx = p1.x-p0.x;
+        var dy = p1.y-p0.y;
+        var l = Math.sqrt(dx*dx+dy*dy);
+        var ang = Math.atan2(dy, dx)*180/Math.PI;
+        // Point from pt0 to p1
+        this.movearrow.attr('d', 
+                            'M '+p0.x+','+(p0.y-arrowSpread/(arrowBase+l))+' '+
+                            'L '+(p0.x+l)+','+p0.y+' '+
+                            'L '+p0.x+','+(p0.y+arrowSpread/(arrowBase+l)))
+                      .attr('transform', 
+                            'rotate('+ang+','+p0.x+','+p0.y+')');
+    },
+
+
+    select: function(i, shift) {
+        if (i < 0 || i >= this.map.nodes.length || this.map.nodes[i].faction != this.team) {
+            if (shift) {
+                return;
+            }          
+            else {
+                this.selection = [];                
+            }  
+        }
+        else {
+            if (shift) {
+                if (this.selection.includes(i)) {
+                    var j = this.selection.indexOf(i);
+                    this.selection.splice(j, 1);
+                } else {
+                    this.selection.push(i);
+                }
+
+            }
+            else {
+                this.selection = [i]                
+            }
+        };
+
+        this.redrawSel();
+    },
+
+    areaSelect: function(x1, y1, x2, y2, add) {
+        if (!add)
+            this.selection = [];
+        var xmin = Math.min(x1, x2);
+        var xmax = Math.max(x1, x2);
+        var ymin = Math.min(y1, y2);
+        var ymax = Math.max(y1, y2);
+
+        for (var i = 0; i < this.map.nodes.length; ++i) {
+            var n = this.map.nodes[i];            
+            if (n.x >= xmin && n.x < xmax &&
+                n.y >= ymin && n.y < ymax &&
+                n.faction == this.team && 
+                (!add || this.selection.indexOf(i) < 0)) {
+                this.selection.push(i);
+            }
+        }
+
+        this.redrawSel();
+    },
+
+    redrawSel: function() {
+        var circles = this.selcircles.selectAll("circle").data(this.selection);
+        nodes = this.map.nodes;
+        circles
+            .enter()
+            .append("circle")
+            .attr("r", 3)
+            .attr("cx", function(d) {
+                return nodes[d].x;
+            })
+            .attr("cy", function(d) {
+                return nodes[d].y;
+            });
+        circles
+            .attr("cx", function(d) {
+                return nodes[d].x;
+            })
+            .attr("cy", function(d) {
+                return nodes[d].y;
+            });
+        circles.exit().remove();
+    },
+
+    removeFromSel: function(i) {
+        // Now, do we need to update anything?
+        if (this.selection.includes(i)) {
+            this.selection.splice(this.selection.indexOf(i), 1);
+        }
+
+        for (var j = 0; j < this.selection.length; ++j) {
+            if (this.selection[j] > i) {
+                this.selection[j] -= 1;
+            }
+        }
+    }
+}
+
 
 // Test level
 testmap = {
@@ -647,19 +718,15 @@ testmap = {
          [100, 60]],         
     ],
     stats: [    // Attack, health, speed
-        [2, 1, 5],
-        [1, 2, 3]
+        [0.1, 1, 30],
+        [0.1, 2, 10]
     ],
     n1: 10,
     n2: 20,
 };
 
-var PlayerController = function(map) {
-    // Handles the controls on the player's side
-    
-}
-
 var map = new WarMap("#field", 100, testmap);
+map.addController(PlayerController, 1);
 
 // Generate points
 points = [];
@@ -667,24 +734,6 @@ points = [];
 function randint(n) {
     return Math.floor(Math.random() * n);
 }
-
-/*
-for (var i = 0; i < 40; ++i) {
-    points.push([randint(100), randint(100)]);
-}
-for (var i = 0; i < 30; ++i) {
-  points.push([randint(100), randint(50)]);
-}
-for (var i = 0; i < points.length; ++i) {
-    map.addNode(
-        new WarNode(i > 0 ? randint(3) : 1, 0.02, 1, 30, points[i][0], points[i][1])
-    );
-}*/
-
-
-
-
-//map.select(0);
 
 d3.select('body').on('keypress', function() {
     if (d3.event.key == 'q') {
