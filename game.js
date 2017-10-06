@@ -160,8 +160,8 @@ var WarMap = function(selector, targ_score, config) {
     this.polygons = this.svg.append("g").attr("class", "polygons");
     this.units = this.svg.append("g").attr("class", "units");
     this.edges = this.svg.append("g").attr("class", "edges");
-    
-    this.spawns = this.svg.append("g").attr("class", "spawn-area");    
+
+    this.spawns = this.svg.append("g").attr("class", "spawn-area");
 
     // Running interval
     this.dt = 30;
@@ -228,7 +228,7 @@ WarMap.prototype = {
             var s1 = bside(p, b1);
             var s2 = bside(p, b2);
 
-            if (s1 == teamsides[0] && n1 < config.n1) {                
+            if (s1 == teamsides[0] && n1 < config.n1) {
                 this.addNode(new WarNode(1, config.stats[0][0],
                                             config.stats[0][1],
                                             config.stats[0][2], p[0], p[1]));
@@ -312,7 +312,7 @@ WarMap.prototype = {
           if (n.moving) {
               n.move(this.dt);
           }
-      }      
+      }
     },
 
     solveCollisions: function() {
@@ -324,7 +324,7 @@ WarMap.prototype = {
 
           // Check radii
           var rmin = n1.radius()+n2.radius();
-          // Distance? 
+          // Distance?
           var dx = p2[0]-p1[0];
           var dy = p2[1]-p1[1];
           var l = Math.sqrt(dx*dx+dy*dy);
@@ -337,7 +337,7 @@ WarMap.prototype = {
             }
             else {
               n2.x += dx/l*(rmin-l);
-              n2.y += dy/l*(rmin-l);                
+              n2.y += dy/l*(rmin-l);
             }
           }
       }
@@ -364,11 +364,11 @@ WarMap.prototype = {
           var l = Math.sqrt(dx*dx+dy*dy);
           var dmg = l*this.dt/1000*damageRate;
           this.nodes[il].health -= this.nodes[ir].attack*dmg;
-          this.nodes[ir].health -= this.nodes[il].attack*dmg;          
-          if (this.nodes[il].health <= 0) 
+          this.nodes[ir].health -= this.nodes[il].attack*dmg;
+          if (this.nodes[il].health <= 0)
             to_remove.push(il);
-          if (this.nodes[ir].health <= 0) 
-            to_remove.push(ir);          
+          if (this.nodes[ir].health <= 0)
+            to_remove.push(ir);
         }
       }
 
@@ -381,7 +381,7 @@ WarMap.prototype = {
 
     calcScore: function() {
       for (var i = 0; i < this._cells.length; ++i) {
-        var c = this._cells[i];        
+        var c = this._cells[i];
         if (!c || c.data[2] == 0) // Neutral
           continue;
         var area = 0;
@@ -406,7 +406,7 @@ WarMap.prototype = {
       d3.select('#score2').html(Math.ceil(this.scores[2]/this.tscore*100.0) + '%');
 
       if (this.scores[1] >= this.tscore) {
-        return 1;        
+        return 1;
       }
       else if (this.scores[2] >= this.tscore) {
         return 2;
@@ -462,7 +462,7 @@ WarMap.prototype = {
                     t = (t-0.5)/0.5;
                     tx = pu[0]*(1-t)+pr[0]*t;
                     ty = pu[1]*(1-t)+pr[1]*t;
-                }                
+                }
             }
             else {
                 tx = p1.x;
@@ -499,7 +499,7 @@ var PlayerController = function(map, team) {
 
     var self = this;
 
-    // Compute conversion matrices 
+    // Compute conversion matrices
     this.computeMatrices();
     window.addEventListener('resize', function() {
         self.computeMatrices();
@@ -517,6 +517,10 @@ var PlayerController = function(map, team) {
     this.movearrow = this.svg.append('path')
                          .classed('move-arrow', true)
                          .classed('hidden', true);
+                         /*
+    this.movecircles = this.svg.append("g").attr("class", "move-circle")
+                               .classed("hidden", true);
+                               */
 
     // Click capture system
     this._lastbutton = -1;
@@ -539,9 +543,10 @@ var PlayerController = function(map, team) {
                 break;
             case 2:
                 self.movearrow.classed('hidden', false);
+                //self.movecircles.classed('hidden', false);
                 self.drawArrow(self._pt0, self._pt0);
                 break;
-        }        
+        }
     });
     // 3. On mouse move, change the graphic
     this.svg.on("mousemove", function() {
@@ -563,7 +568,7 @@ var PlayerController = function(map, team) {
         var p1 = self.getMouseCoords();
 
         switch(self._lastbutton) {
-            case 0: 
+            case 0:
                 self.selrect.classed('hidden', true);
                 self.areaSelect(self._pt0.x, self._pt0.y, p1.x, p1.y, d3.event.shiftKey);
                 break;
@@ -603,12 +608,53 @@ PlayerController.prototype = {
         var l = Math.sqrt(dx*dx+dy*dy);
         var ang = Math.atan2(dy, dx)*180/Math.PI;
         // Point from pt0 to p1
-        this.movearrow.attr('d', 
+        this.movearrow.attr('d',
                             'M '+p0.x+','+(p0.y-arrowSpread/(arrowBase+l))+' '+
                             'L '+(p0.x+l)+','+p0.y+' '+
                             'L '+p0.x+','+(p0.y+arrowSpread/(arrowBase+l)))
-                      .attr('transform', 
+                      .attr('transform',
                             'rotate('+ang+','+p0.x+','+p0.y+')');
+        // How are they going to be arranged then?
+        /*
+        var circleR = 2;
+        var seln = this.selection.length;
+        var nrows = Math.min(Math.ceil(l/(2*circleR)), seln);
+        var ncols = Math.ceil(seln/nrows);
+        var rmcols = seln%ncols;
+
+        // Normal 
+        var n = [dy/l, -dx/l];
+
+        // Positions?
+        var cpos = [];
+        for (var r = 0; r < nrows; ++r) {
+            var nc = Math.min(ncols, seln-cpos.length);
+            // Center for this row?
+            var rowc = [p0.x+dx/l*r*circleR*2,
+                        p0.y+dy/l*r*circleR*2];
+            for (var c = 0; c < nc; ++c) {
+                cpos.push([rowc[0] + n[0]*(c+0.5-nc/2.0)*circleR*2, 
+                           rowc[1] + n[1]*(c+0.5-nc/2.0)*circleR*2]);                
+            }
+        }
+
+        this.movecircles.selectAll('circle')
+                        .data(cpos)
+                        .enter()
+                        .append('circle')
+                        .attr('r', circleR);
+        this.movecircles.selectAll('circle')
+                        .data(cpos)
+                        .attr('cx', function(d) { return d[0];})
+                        .attr('cy', function(d) { return d[1];});
+        this.movecircles.selectAll('circle')
+                        .data(cpos)
+                        .exit()
+                        .remove();
+                            */
+
+
+
     },
 
 
@@ -616,10 +662,10 @@ PlayerController.prototype = {
         if (i < 0 || i >= this.map.nodes.length || this.map.nodes[i].faction != this.team) {
             if (shift) {
                 return;
-            }          
+            }
             else {
-                this.selection = [];                
-            }  
+                this.selection = [];
+            }
         }
         else {
             if (shift) {
@@ -632,7 +678,7 @@ PlayerController.prototype = {
 
             }
             else {
-                this.selection = [i]                
+                this.selection = [i]
             }
         };
 
@@ -648,10 +694,10 @@ PlayerController.prototype = {
         var ymax = Math.max(y1, y2);
 
         for (var i = 0; i < this.map.nodes.length; ++i) {
-            var n = this.map.nodes[i];            
+            var n = this.map.nodes[i];
             if (n.x >= xmin && n.x < xmax &&
                 n.y >= ymin && n.y < ymax &&
-                n.faction == this.team && 
+                n.faction == this.team &&
                 (!add || this.selection.indexOf(i) < 0)) {
                 this.selection.push(i);
             }
@@ -710,12 +756,12 @@ testmap = {
     spawns: [
         [50, 10],
         [50, 90]
-    ], 
+    ],
     border: [
         [[0, 40],
          [100, 40]],
         [[0, 60],
-         [100, 60]],         
+         [100, 60]],
     ],
     stats: [    // Attack, health, speed
         [0.1, 1, 30],

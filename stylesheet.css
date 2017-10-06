@@ -72,6 +72,12 @@ body {
   fill: rgba(0, 255, 0, 0.5);
 }
 
+.move-circle {
+  stroke-width: 0.3;
+  stroke: #00ff00;
+  fill: none;
+}
+
 .hidden {
   visibility: hidden;
 }
